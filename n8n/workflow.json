@@ -1,0 +1,167 @@
+{
+  "name": "Finance AI Assistant Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "finance-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "finance-chat-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.message || '';\nconst sessionId = body.session_id || null;\n\nif (!message || message.trim() === '') {\n  throw new Error('message field is required');\n}\n\nreturn [{ json: { message: message.trim(), session_id: sessionId } }];"
+      },
+      "id": "validate-input",
+      "name": "Validate & Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/chat",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({ message: $json.message, session_id: $json.session_id }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "call-ai-agent",
+      "name": "Call AI Agent (FastAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst toolUsed = data.tool_used || 'general_chat';\n\nlet routeLabel = 'General Chat';\nif (toolUsed && toolUsed.includes('transaction')) {\n  routeLabel = 'Transactions API';\n} else if (toolUsed && (toolUsed.includes('advice') || toolUsed.includes('rag'))) {\n  routeLabel = 'RAG Knowledge Base';\n}\n\nreturn [{\n  json: {\n    response: data.response,\n    session_id: data.session_id,\n    tool_used: toolUsed,\n    route_label: routeLabel,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "process-response",
+      "name": "Process & Enrich Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/chat",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={ \"message\": \"How much did I spend last week?\", \"session_id\": \"n8n-test-session\" }",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "scheduled-weekly-report",
+      "name": "Scheduled Weekly Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 520]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Monday 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 520]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate & Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Extract Input": {
+      "main": [
+        [
+          {
+            "node": "Call AI Agent (FastAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call AI Agent (FastAPI)": {
+      "main": [
+        [
+          {
+            "node": "Process & Enrich Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process & Enrich Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Monday 9AM": {
+      "main": [
+        [
+          {
+            "node": "Scheduled Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {}
+}
